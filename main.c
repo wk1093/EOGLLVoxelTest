@@ -10,6 +10,7 @@ typedef enum {
     VOXEL_DIRT,
     VOXEL_GRASS,
     VOXEL_STONE,
+    VOXEL_LIGHT,
 } VoxelType;
 
 typedef struct {
@@ -30,6 +31,8 @@ typedef struct {
     int chunkHeight;
     int chunkDepth;
 } World;
+
+vec3 lightPos = {5.0f, 5.0f, 5.0f};
 
 Voxel *getVoxelFromChunk(Chunk *chunk, int x, int y, int z) {
     return &chunk->voxels[x + y * 16 + z * 16 * 16];
@@ -88,7 +91,7 @@ void renderVoxel(GameData* dat, Voxel *voxel, int x, int y, int z) {
     eogllUpdateModelMatrix(&model, dat->program, "model");
     eogllUpdateProjectionMatrix(&dat->projection, dat->program, "projection", dat->window->width, dat->window->height);
     eogllUpdateCameraMatrix(&dat->camera, dat->program, "view");
-    eogllSetUniform3f(dat->program, "lightPos", 5.0f, 5.0f, 5.0f);
+    eogllSetUniform3f(dat->program, "lightPos", lightPos[0], lightPos[1], lightPos[2]);
     eogllSetUniform3f(dat->program, "viewPos", dat->camera.pos[0], dat->camera.pos[1], dat->camera.pos[2]);
     eogllDrawBufferObject(dat->buffer, GL_TRIANGLES);
 }
@@ -128,8 +131,9 @@ int main() {
     eogllEnableDepth();
 
 
+
     float vertices[] = {
-            // positions            // texture coords
+            // positions            // texture coords  // normals
             -0.5f, -0.5f, -0.5f,  0.0f, 0.0f, 0.0f,  0.0f, -1.0f,
             0.5f, -0.5f, -0.5f,  1.0f, 0.0f, 0.0f,  0.0f, -1.0f,
             0.5f,  0.5f, -0.5f,  1.0f, 1.0f, 0.0f,  0.0f, -1.0f,
@@ -223,6 +227,7 @@ int main() {
             "uniform vec3 viewPos;\n"
             "\n"
             "void main() {\n"
+            "vec3 lightColor = vec3(0.2, 0.2, 1.0);\n"
             "// ambient\n"
             "float ambientStrength = 0.3;\n"
             "vec3 ambient = ambientStrength * vec3(1.0, 1.0, 1.0);\n"
@@ -231,14 +236,14 @@ int main() {
             "vec3 norm = normalize(Normal);\n"
             "vec3 lightDir = normalize(lightPos - FragPos);\n"
             "float diff = max(dot(norm, lightDir), 0.0);\n"
-            "vec3 diffuse = diff * vec3(1.0, 1.0, 1.0);\n"
+            "vec3 diffuse = diff * lightColor;\n"
             "\n"
             "// specular\n"
             "float specularStrength = 0.5;\n"
             "vec3 viewDir = normalize(viewPos - FragPos);\n"
             "vec3 reflectDir = reflect(-lightDir, norm);\n"
             "float spec = pow(max(dot(viewDir, reflectDir), 0.0), 32);\n"
-            "vec3 specular = specularStrength * spec * vec3(1.0, 1.0, 1.0);\n"
+            "vec3 specular = specularStrength * spec * lightColor;\n"
             "\n"
             "vec3 result = (ambient + diffuse + specular) * texture(texture1, TexCoord).rgb;\n"
             "FragColor = vec4(result, 1.0);\n"
@@ -257,16 +262,17 @@ int main() {
     EogllBufferObject object = eogllCreateBufferObject(vao, vbo, ebo, sizeof(indices), GL_UNSIGNED_INT);
 
     EogllTexture *texture1 = eogllCreateTexture("wall.jpg");
+    EogllTexture *texture2 = eogllCreateTexture("light.png");
 
     EogllTexture* textures[] = { // walls for now
-            texture1, texture1, texture1, texture1
+            texture1, texture1, texture1, texture1, texture2
     };
 
     GameData dat = {
             .buffer = &object,
             .program = program,
             .textures = textures,
-            .textureCount = 4,
+            .textureCount = 5,
             .projection = eogllPerspectiveProjection(45.0f, 0.1f, 100.0f),
             .camera = eogllCreateCamera(),
             .window = window
@@ -313,6 +319,13 @@ int main() {
 
     Voxel vox = {1};
 
+    // render a small cube at the position of the light
+    EogllModel cube = eogllCreateModel();
+    glm_vec3_copy(lightPos, cube.pos);
+    glm_vec3_copy((vec3) {0.2f, 0.2f, 0.2f}, cube.scale);
+    glm_vec3_copy((vec3) {0.0f, 0.0f, 0.0f}, cube.rot);
+
+
     // auto rotate camera 180 to look at the world
     eogllYawCamera(&dat.camera, 180.0f);
 
@@ -322,6 +335,9 @@ int main() {
         double currentTime = eogllGetTime();
         float deltaTime = (float)(currentTime - lastTime);
         lastTime = currentTime;
+
+        lightPos[0] = 5 + sin(currentTime * 2) * 8;
+        glm_vec3_copy(lightPos, cube.pos);
 
 
         if (window->press[EOGLL_KEY_ESCAPE]) {
@@ -385,6 +401,15 @@ int main() {
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
         renderWorld(&dat, &world);
+
+        eogllUseProgram(dat.program);
+        eogllBindTextureUniform(dat.textures[4], dat.program, "texture1", 0);
+        eogllUpdateModelMatrix(&cube, dat.program, "model");
+        eogllUpdateProjectionMatrix(&dat.projection, dat.program, "projection", dat.window->width, dat.window->height);
+        eogllUpdateCameraMatrix(&dat.camera, dat.program, "view");
+        eogllSetUniform3f(dat.program, "lightPos", dat.camera.pos[0], dat.camera.pos[1], dat.camera.pos[2]);
+        eogllSetUniform3f(dat.program, "viewPos", dat.camera.pos[0], dat.camera.pos[1], dat.camera.pos[2]);
+        eogllDrawBufferObject(dat.buffer, GL_TRIANGLES);
 
         eogllSwapBuffers(window);
         eogllPollEvents(window);
