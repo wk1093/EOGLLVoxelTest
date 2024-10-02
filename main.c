@@ -395,20 +395,19 @@ int main() {
     eogllFinishTexture(crosshair_texture, "crosshair.png");
     EogllModel crosshair_model = eogllCreateModel();
     glm_vec3_copy((vec3) {0.0f, 0.0f, 0.0f}, crosshair_model.pos);
-    glm_vec3_copy((vec3) {0.1f, 0.1f, 0.1f}, crosshair_model.scale);
     glm_vec3_copy((vec3) {0.0f, 0.0f, 0.0f}, crosshair_model.rot);
     
     // adjust crosshair size to match the window size, so it doesn't appear stretched
     // normally the crosshair looks stretched to match the aspect ratio of the window
     // we want to counteract this
-    float crosshair_width = 0.1f;
-    float crosshair_height = 0.1f;
+    float crosshair_width = 0.06f;
+    float crosshair_height = 0.06f;
     if (window->width > window->height) {
-        crosshair_width = 0.1f * (float)window->height / (float)window->width;
+        crosshair_width *= (float)window->height / (float)window->width;
     } else {
-        crosshair_height = 0.1f * (float)window->width / (float)window->height;
+        crosshair_height *= (float)window->width / (float)window->height;
     }
-    glm_vec3_copy((vec3) {crosshair_width, crosshair_height, 0.0f}, crosshair_model.scale);
+    glm_vec3_copy((vec3) {crosshair_width, crosshair_height, 1.0f}, crosshair_model.scale);
 
 
 
