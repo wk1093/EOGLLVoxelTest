@@ -105,7 +105,7 @@ void renderSelection(GameData* dat) {
     }
     EogllModel model = eogllCreateModel();
     glm_vec3_copy(dat->selectedVoxel, model.pos);
-    glm_vec3_copy((vec3) {1.1f, 1.1f, 1.1f}, model.scale);
+    glm_vec3_copy((vec3) {1.05f, 1.05f, 1.05f}, model.scale);
     glm_vec3_copy((vec3) {0.0f, 0.0f, 0.0f}, model.rot);
 
 
@@ -149,38 +149,43 @@ RaycastResult raycastBlock(EogllCamera camera, World *world) {
     glm_vec3_copy(camera.pos, curpos);
     vec3 dir;
     glm_vec3_copy(camera.front, dir);
+    vec3 movedelta;
+    glm_vec3_scale(dir, raycastDistance/raycastSteps, movedelta);
+
     for (int i = 0; i < raycastSteps; i++) {
-        // movedelta
-        vec3 movedelta;
-        float distance = raycastDistance * (float)i / raycastSteps;
-        glm_vec3_scale(dir, distance, movedelta);
+
+        float distance = raycastDistance * (float)(i / raycastSteps);
+
         glm_vec3_add(curpos, movedelta, curpos);
-        // Voxel *voxel = getVoxelFromWorld(world, curpos[0], curpos[1], curpos[2]);
-        // make sure we are not out of bounds
-        if (curpos[0] < 0 || curpos[0] >= world->width * world->chunkWidth) {
+
+        vec3 voxelPos;
+        voxelPos[0] = curpos[0];
+        voxelPos[1] = curpos[1];
+        voxelPos[2] = curpos[2];
+        voxelPos[0] = roundf(voxelPos[0]);
+        voxelPos[1] = roundf(voxelPos[1]);
+        voxelPos[2] = roundf(voxelPos[2]);
+
+        // check bounds
+        if (voxelPos[0] < 0 || voxelPos[0] >= world->width * world->chunkWidth) {
             continue;
         }
-        if (curpos[1] < 0 || curpos[1] >= world->height * world->chunkHeight) {
+        if (voxelPos[1] < 0 || voxelPos[1] >= world->height * world->chunkHeight) {
             continue;
         }
-        if (curpos[2] < 0 || curpos[2] >= world->depth * world->chunkDepth) {
+        if (voxelPos[2] < 0 || voxelPos[2] >= world->depth * world->chunkDepth) {
             continue;
         }
-        Voxel *voxel = getVoxelFromWorld(world, curpos[0], curpos[1], curpos[2]);
+
+        Voxel *voxel = getVoxelFromWorld(world, voxelPos[0], voxelPos[1], voxelPos[2]);
+
         if (voxel->type == VOXEL_AIR) {
             continue;
         }
         glm_vec3_copy(curpos, result.hit);
+        glm_vec3_copy(voxelPos, result.block);
         result.distance = distance;
         result.hitBlock = true;
-        // convert from hit to block, we need to round in a way that is consistent
-        // the coords should be the same, so we should only need to round
-        result.block[0] = curpos[0] - 0.5f;
-        result.block[1] = curpos[1] - 0.5f;
-        result.block[2] = curpos[2] - 0.5f;
-        result.block[0] = roundf(result.block[0]);
-        result.block[1] = roundf(result.block[1]);
-        result.block[2] = roundf(result.block[2]);
 
 
         return result;
@@ -344,15 +349,26 @@ int main() {
 
     // crosshair stuff
     float crosshair_vert[] = {
-            -0.5f, -0.5f, 0.0f,
-            0.5f, -0.5f, 0.0f,
-            0.5f, 0.5f, 0.0f,
-            -0.5f, 0.5f, 0.0f,
+        // positions tex coords
+            -0.5f, -0.5f, 0.0f, 0.0f, 0.0f,
+            0.5f, -0.5f, 0.0f, 1.0f, 0.0f,
+            0.5f, 0.5f, 0.0f, 1.0f, 1.0f,
+            -0.5f, 0.5f, 0.0f, 0.0f, 1.0f,
     };
     unsigned int crosshair_indices[] = {
             0, 1, 2,
             2, 3, 0
     };
+    const char *crosshair_verts =
+            "#version 330 core\n"
+            "layout (location = 0) in vec3 aPos;\n"
+            "layout (location = 1) in vec2 aTexCoord;\n"
+            "out vec2 TexCoord;\n"
+            "uniform mat4 model;\n"
+            "void main() {\n"
+            "TexCoord = aTexCoord;\n"
+            "gl_Position = model * vec4(aPos.x, aPos.y, 0.0, 1.0);\n"
+            "}";
     const char *crosshair_frags =
             "#version 330 core\n"
             "out vec4 FragColor;\n"
@@ -361,30 +377,50 @@ int main() {
             "void main() {\n"
             "FragColor = texture(texture1, TexCoord);\n"
             "}";
-    const char *crosshair_verts =
-            "#version 330 core\n"
-            "layout (location = 0) in vec3 aPos;\n"
-            "out vec2 TexCoord;\n"
-            "void main() {\n"
-            "TexCoord = vec2(aPos.x, aPos.y);\n"
-            "gl_Position = vec4(aPos.x, aPos.y, 0.0, 1.0);\n"
-            "}";
     
     EogllAttribBuilder crosshair_builder = eogllCreateAttribBuilder();
     eogllAddAttribute(&crosshair_builder, GL_FLOAT, 3);
+    eogllAddAttribute(&crosshair_builder, GL_FLOAT, 2);
     unsigned int crosshair_vao = eogllGenVertexArray();
     unsigned int crosshair_vbo = eogllGenBuffer(crosshair_vao, GL_ARRAY_BUFFER, sizeof(crosshair_vert), crosshair_vert, GL_STATIC_DRAW);
     unsigned int crosshair_ebo = eogllGenBuffer(crosshair_vao, GL_ELEMENT_ARRAY_BUFFER, sizeof(crosshair_indices), crosshair_indices, GL_STATIC_DRAW);
     eogllBuildAttributes(&crosshair_builder, crosshair_vao);
     EogllBufferObject crosshair_object = eogllCreateBufferObject(crosshair_vao, crosshair_vbo, crosshair_ebo, sizeof(crosshair_indices), GL_UNSIGNED_INT);
-    EogllTexture *crosshair_texture = eogllCreateTexture("crosshair.png");
+    
+    // set gl to not smooth the texture
+
+    EogllTexture *crosshair_texture = eogllStartTexture();
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    eogllFinishTexture(crosshair_texture, "crosshair.png");
+    EogllModel crosshair_model = eogllCreateModel();
+    glm_vec3_copy((vec3) {0.0f, 0.0f, 0.0f}, crosshair_model.pos);
+    glm_vec3_copy((vec3) {0.1f, 0.1f, 0.1f}, crosshair_model.scale);
+    glm_vec3_copy((vec3) {0.0f, 0.0f, 0.0f}, crosshair_model.rot);
+    
+    // adjust crosshair size to match the window size, so it doesn't appear stretched
+    // normally the crosshair looks stretched to match the aspect ratio of the window
+    // we want to counteract this
+    float crosshair_width = 0.1f;
+    float crosshair_height = 0.1f;
+    if (window->width > window->height) {
+        crosshair_width = 0.1f * (float)window->height / (float)window->width;
+    } else {
+        crosshair_height = 0.1f * (float)window->width / (float)window->height;
+    }
+    glm_vec3_copy((vec3) {crosshair_width, crosshair_height, 0.0f}, crosshair_model.scale);
+
+
 
     EogllShaderProgram *crosshair_program = eogllLinkProgram(crosshair_verts, crosshair_frags);
 
     EogllTexture *texture1 = eogllCreateTexture("wall.jpg");
     EogllTexture *texture2 = eogllCreateTexture("light.png");
     EogllTexture *texture3 = eogllCreateTexture("dirt.png");
-    EogllTexture *texture4 = eogllCreateTexture("outline.png");
+    EogllTexture *texture4 = eogllStartTexture();
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    eogllFinishTexture(texture4, "outline.png");
 
     EogllTexture* textures[] = { // walls for now
             // air, dirt, grass, stone, light
@@ -548,13 +584,14 @@ int main() {
         eogllUseProgram(dat.program);
         eogllBindTextureUniform(dat.textures[4], dat.program, "texture1", 0);
         eogllUpdateModelMatrix(&cube, dat.program, "model");
-        eogllUpdateProjectionMatrix(&dat.projection, dat.program, "projection", dat.window->width, dat.window->height);
+        eogllUpdateProjectionMatrix(&dat.projection, dat.program, "projection", window->width, window->height);
         eogllUpdateCameraMatrix(&dat.camera, dat.program, "view");
         eogllSetUniform3f(dat.program, "lightPos", dat.camera.pos[0], dat.camera.pos[1], dat.camera.pos[2]);
         eogllSetUniform3f(dat.program, "viewPos", dat.camera.pos[0], dat.camera.pos[1], dat.camera.pos[2]);
         eogllDrawBufferObject(dat.buffer, GL_TRIANGLES);
 
         eogllUseProgram(crosshair_program);
+        eogllUpdateModelMatrix(&crosshair_model, crosshair_program, "model");
         eogllBindTextureUniform(crosshair_texture, crosshair_program, "texture1", 0);
         eogllDrawBufferObject(&crosshair_object, GL_TRIANGLES);
 
