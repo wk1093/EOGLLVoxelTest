@@ -1,4 +1,5 @@
 #include <eogll.h>
+#include <stdbool.h>
 
 // EOGLL voxel engine
 
@@ -11,11 +12,11 @@ typedef enum {
     VOXEL_GRASS,
     VOXEL_STONE,
     VOXEL_LIGHT,
+    VOXEL_SELECTED,
 } VoxelType;
 
 typedef struct {
     VoxelType type;
-
 } Voxel;
 
 typedef struct {
@@ -69,7 +70,10 @@ typedef struct {
     EogllCamera camera;
     EogllWindow* window;
     // model is calculated per voxel
+    vec3 selectedVoxel;
+    bool selectedVoxelValid;
 } GameData;
+
 
 void renderVoxel(GameData* dat, Voxel *voxel, int x, int y, int z) {
     EogllModel model = eogllCreateModel();
@@ -95,6 +99,25 @@ void renderVoxel(GameData* dat, Voxel *voxel, int x, int y, int z) {
     eogllSetUniform3f(dat->program, "viewPos", dat->camera.pos[0], dat->camera.pos[1], dat->camera.pos[2]);
     eogllDrawBufferObject(dat->buffer, GL_TRIANGLES);
 }
+void renderSelection(GameData* dat) {
+    if (!dat->selectedVoxelValid) {
+        return;
+    }
+    EogllModel model = eogllCreateModel();
+    glm_vec3_copy(dat->selectedVoxel, model.pos);
+    glm_vec3_copy((vec3) {1.1f, 1.1f, 1.1f}, model.scale);
+    glm_vec3_copy((vec3) {0.0f, 0.0f, 0.0f}, model.rot);
+
+
+    eogllUseProgram(dat->program);
+    eogllBindTextureUniform(dat->textures[VOXEL_SELECTED], dat->program, "texture1", 0);
+    eogllUpdateModelMatrix(&model, dat->program, "model");
+    eogllUpdateProjectionMatrix(&dat->projection, dat->program, "projection", dat->window->width, dat->window->height);
+    eogllUpdateCameraMatrix(&dat->camera, dat->program, "view");
+    eogllSetUniform3f(dat->program, "lightPos", lightPos[0], lightPos[1], lightPos[2]);
+    eogllSetUniform3f(dat->program, "viewPos", dat->camera.pos[0], dat->camera.pos[1], dat->camera.pos[2]);
+    eogllDrawBufferObject(dat->buffer, GL_TRIANGLES);
+}
 
 void renderWorld(GameData* dat, World *world) {
     for (int x = 0; x < world->width * world->chunkWidth; x++) {
@@ -110,6 +133,63 @@ void renderWorld(GameData* dat, World *world) {
         }
     }
 }
+typedef struct {
+    vec3 hit;
+    float distance;
+    bool hitBlock;
+    vec3 block;
+} RaycastResult;
+
+RaycastResult raycastBlock(EogllCamera camera, World *world) {
+    RaycastResult result = {0};
+    result.hitBlock = false;
+    const static int raycastSteps = 3000;
+    const static float raycastDistance = 10.0f;
+    vec3 curpos;
+    glm_vec3_copy(camera.pos, curpos);
+    vec3 dir;
+    glm_vec3_copy(camera.front, dir);
+    for (int i = 0; i < raycastSteps; i++) {
+        // movedelta
+        vec3 movedelta;
+        float distance = raycastDistance * (float)i / raycastSteps;
+        glm_vec3_scale(dir, distance, movedelta);
+        glm_vec3_add(curpos, movedelta, curpos);
+        // Voxel *voxel = getVoxelFromWorld(world, curpos[0], curpos[1], curpos[2]);
+        // make sure we are not out of bounds
+        if (curpos[0] < 0 || curpos[0] >= world->width * world->chunkWidth) {
+            continue;
+        }
+        if (curpos[1] < 0 || curpos[1] >= world->height * world->chunkHeight) {
+            continue;
+        }
+        if (curpos[2] < 0 || curpos[2] >= world->depth * world->chunkDepth) {
+            continue;
+        }
+        Voxel *voxel = getVoxelFromWorld(world, curpos[0], curpos[1], curpos[2]);
+        if (voxel->type == VOXEL_AIR) {
+            continue;
+        }
+        glm_vec3_copy(curpos, result.hit);
+        result.distance = distance;
+        result.hitBlock = true;
+        // convert from hit to block, we need to round in a way that is consistent
+        // the coords should be the same, so we should only need to round
+        result.block[0] = curpos[0] - 0.5f;
+        result.block[1] = curpos[1] - 0.5f;
+        result.block[2] = curpos[2] - 0.5f;
+        result.block[0] = roundf(result.block[0]);
+        result.block[1] = roundf(result.block[1]);
+        result.block[2] = roundf(result.block[2]);
+
+
+        return result;
+    }
+    result.hitBlock = false;
+    return result;
+}
+
+
 
 int main() {
     // EOGLL requires us to always check the success value
@@ -128,6 +208,7 @@ int main() {
         return -1;
     }
 
+    eogllEnableTransparency();
     eogllEnableDepth();
 
 
@@ -245,8 +326,8 @@ int main() {
             "float spec = pow(max(dot(viewDir, reflectDir), 0.0), 32);\n"
             "vec3 specular = specularStrength * spec * lightColor;\n"
             "\n"
-            "vec3 result = (ambient + diffuse + specular) * texture(texture1, TexCoord).rgb;\n"
-            "FragColor = vec4(result, 1.0);\n"
+            "vec4 result = vec4((ambient + diffuse + specular),1.0) * texture(texture1, TexCoord).rgba;\n"
+            "FragColor = result;\n"
             "}";
 
     EogllShaderProgram *program = eogllLinkProgram(vert, frag);
@@ -261,21 +342,64 @@ int main() {
     eogllBuildAttributes(&builder, vao);
     EogllBufferObject object = eogllCreateBufferObject(vao, vbo, ebo, sizeof(indices), GL_UNSIGNED_INT);
 
+    // crosshair stuff
+    float crosshair_vert[] = {
+            -0.5f, -0.5f, 0.0f,
+            0.5f, -0.5f, 0.0f,
+            0.5f, 0.5f, 0.0f,
+            -0.5f, 0.5f, 0.0f,
+    };
+    unsigned int crosshair_indices[] = {
+            0, 1, 2,
+            2, 3, 0
+    };
+    const char *crosshair_frags =
+            "#version 330 core\n"
+            "out vec4 FragColor;\n"
+            "in vec2 TexCoord;\n"
+            "uniform sampler2D texture1;\n"
+            "void main() {\n"
+            "FragColor = texture(texture1, TexCoord);\n"
+            "}";
+    const char *crosshair_verts =
+            "#version 330 core\n"
+            "layout (location = 0) in vec3 aPos;\n"
+            "out vec2 TexCoord;\n"
+            "void main() {\n"
+            "TexCoord = vec2(aPos.x, aPos.y);\n"
+            "gl_Position = vec4(aPos.x, aPos.y, 0.0, 1.0);\n"
+            "}";
+    
+    EogllAttribBuilder crosshair_builder = eogllCreateAttribBuilder();
+    eogllAddAttribute(&crosshair_builder, GL_FLOAT, 3);
+    unsigned int crosshair_vao = eogllGenVertexArray();
+    unsigned int crosshair_vbo = eogllGenBuffer(crosshair_vao, GL_ARRAY_BUFFER, sizeof(crosshair_vert), crosshair_vert, GL_STATIC_DRAW);
+    unsigned int crosshair_ebo = eogllGenBuffer(crosshair_vao, GL_ELEMENT_ARRAY_BUFFER, sizeof(crosshair_indices), crosshair_indices, GL_STATIC_DRAW);
+    eogllBuildAttributes(&crosshair_builder, crosshair_vao);
+    EogllBufferObject crosshair_object = eogllCreateBufferObject(crosshair_vao, crosshair_vbo, crosshair_ebo, sizeof(crosshair_indices), GL_UNSIGNED_INT);
+    EogllTexture *crosshair_texture = eogllCreateTexture("crosshair.png");
+
+    EogllShaderProgram *crosshair_program = eogllLinkProgram(crosshair_verts, crosshair_frags);
+
     EogllTexture *texture1 = eogllCreateTexture("wall.jpg");
     EogllTexture *texture2 = eogllCreateTexture("light.png");
+    EogllTexture *texture3 = eogllCreateTexture("dirt.png");
+    EogllTexture *texture4 = eogllCreateTexture("outline.png");
 
     EogllTexture* textures[] = { // walls for now
-            texture1, texture1, texture1, texture1, texture2
+            // air, dirt, grass, stone, light
+            texture1, texture3, texture1, texture1, texture2, texture4
     };
 
     GameData dat = {
             .buffer = &object,
             .program = program,
             .textures = textures,
-            .textureCount = 5,
+            .textureCount = 6,
             .projection = eogllPerspectiveProjection(45.0f, 0.1f, 100.0f),
             .camera = eogllCreateCamera(),
-            .window = window
+            .window = window,
+            .selectedVoxelValid = false
     };
 
     World world = {
@@ -395,12 +519,31 @@ int main() {
                 eogllPitchCamera(&dat.camera, -window->mousedy * sensitivity);
                 window->mousedy = 0;
             }
+            RaycastResult result = raycastBlock(dat.camera, &world);
+            if (result.hitBlock) {
+                dat.selectedVoxel[0] = result.block[0];
+                dat.selectedVoxel[1] = result.block[1];
+                dat.selectedVoxel[2] = result.block[2];
+                dat.selectedVoxelValid = true;
+            } else {
+                dat.selectedVoxelValid = false;
+            }
+            if (window->mousePress[EOGLL_MOUSE_BUTTON_LEFT]) {
+                // place a block at the cursor
+                // we need to raycast to find the block we are pointing at, we also need to stop at a certain distance to prevent infinite recursion
+                // Eogll does not have any ray utilities (yet) so we have to do it ourselves
+                if (result.hitBlock) {
+                    Voxel *voxel = getVoxelFromWorld(&world, result.block[0], result.block[1], result.block[2]);
+                    *voxel = (Voxel) {VOXEL_AIR};
+                }
+            }
         }
 
         glClearColor(0.2f, 0.3f, 0.3f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
         renderWorld(&dat, &world);
+        renderSelection(&dat);
 
         eogllUseProgram(dat.program);
         eogllBindTextureUniform(dat.textures[4], dat.program, "texture1", 0);
@@ -410,6 +553,23 @@ int main() {
         eogllSetUniform3f(dat.program, "lightPos", dat.camera.pos[0], dat.camera.pos[1], dat.camera.pos[2]);
         eogllSetUniform3f(dat.program, "viewPos", dat.camera.pos[0], dat.camera.pos[1], dat.camera.pos[2]);
         eogllDrawBufferObject(dat.buffer, GL_TRIANGLES);
+
+        eogllUseProgram(crosshair_program);
+        eogllBindTextureUniform(crosshair_texture, crosshair_program, "texture1", 0);
+        eogllDrawBufferObject(&crosshair_object, GL_TRIANGLES);
+
+
+        // set all grass back to dirt
+        for (int x = 0; x < world.width * world.chunkWidth; x++) {
+            for (int y = 0; y < world.height * world.chunkHeight; y++) {
+                for (int z = 0; z < world.depth * world.chunkDepth; z++) {
+                    Voxel *voxel = getVoxelFromWorld(&world, x, y, z);
+                    if (voxel->type == VOXEL_SELECTED) {
+                        *voxel = (Voxel) {VOXEL_DIRT};
+                    }
+                }
+            }
+        }
 
         eogllSwapBuffers(window);
         eogllPollEvents(window);
