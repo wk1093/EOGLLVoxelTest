@@ -4,7 +4,10 @@
 // EOGLL voxel engine
 
 // TODO: lights stored elsewhere
-// TODO: Light color
+// TODO: Movement and collision (no noclipping)
+// TODO: More chunks
+// TODO: Textures
+// TODO: worldgen
 
 typedef enum {
     VOXEL_AIR,
@@ -194,6 +197,60 @@ RaycastResult raycastBlock(EogllCamera camera, World *world) {
     return result;
 }
 
+typedef enum {
+    DIR_UP, // y+
+    DIR_DOWN, // y-
+    DIR_WEST, // x-
+    DIR_EAST, // x+
+    DIR_NORTH, // z+
+    DIR_SOUTH, // z-
+    DIR_NONE // 0
+} Direction;
+
+Direction getDirectionOfRaycast(RaycastResult result) {
+    // compare result.block with result.hit
+    float diffx = result.block[0] - result.hit[0];
+    float diffy = result.block[1] - result.hit[1];
+    float diffz = result.block[2] - result.hit[2];
+    // greatest difference
+
+    if (fabs(diffx) > fabs(diffy) && fabs(diffx) > fabs(diffz)) {
+        return diffx < 0 ? DIR_EAST : DIR_WEST;
+    }
+    if (fabs(diffy) > fabs(diffx) && fabs(diffy) > fabs(diffz)) {
+        return diffy < 0 ? DIR_UP : DIR_DOWN;
+    }
+    if (fabs(diffz) > fabs(diffx) && fabs(diffz) > fabs(diffy)) {
+        return diffz > 0 ? DIR_SOUTH : DIR_NORTH;
+    }
+    return DIR_NONE;
+    
+    
+}
+
+typedef struct {
+    vec3 pos;
+} BlockPos;
+
+BlockPos getBlockOnFace(RaycastResult res) {
+    Direction dir = getDirectionOfRaycast(res);
+    // just project the block pos by the direction
+    BlockPos pos;
+    pos.pos[0] = res.block[0];
+    pos.pos[1] = res.block[1];
+    pos.pos[2] = res.block[2];
+    switch (dir) {
+        case DIR_UP: pos.pos[1] += 1; break;
+        case DIR_DOWN: pos.pos[1] -= 1; break;
+        case DIR_WEST: pos.pos[0] -= 1; break;
+        case DIR_EAST: pos.pos[0] += 1; break;
+        case DIR_NORTH: pos.pos[2] += 1; break;
+        case DIR_SOUTH: pos.pos[2] -= 1; break;
+        default: break;
+    }
+    return pos;
+}
+
 
 
 int main() {
@@ -278,64 +335,7 @@ int main() {
             33, 34, 35
     };
 
-
-    const char *vert =
-            "#version 330 core\n"
-            "layout (location = 0) in vec3 aPos; // the position variable has attribute position 0\n"
-            "layout (location = 1) in vec2 aTexCoord; // the texture coordinate has attribute position 1\n"
-            "layout (location = 2) in vec3 aNormal; // the normal has attribute position 2\n"
-            "\n"
-            "out vec2 TexCoord; // output a texture coordinate to the fragment shader\n"
-            "out vec3 Normal; // output a normal to the fragment shader\n"
-            "out vec3 FragPos; // output a fragment position to the fragment shader\n"
-            "\n"
-            "uniform mat4 model;\n"
-            "uniform mat4 view;\n"
-            "uniform mat4 projection;\n"
-            "\n"
-            "void main() {\n"
-            "FragPos = vec3(model * vec4(aPos, 1.0));\n"
-            "gl_Position = projection * view * model * vec4(aPos, 1.0);\n"
-            "TexCoord = aTexCoord; // pass the texture coordinate to the fragment shader\n"
-            "Normal = mat3(transpose(inverse(model))) * aNormal; // pass the normal vector to the fragment shader\n"
-            "}";
-
-    const char *frag =
-            "#version 330 core\n"
-            "out vec4 FragColor; // the output color of the fragment shader\n"
-            "in vec2 TexCoord; // the input texture coordinate from the vertex shader\n"
-            "in vec3 Normal; // the input normal from the vertex shader\n"
-            "in vec3 FragPos; // the input fragment position from the vertex shader\n"
-            "\n"
-            "// texture sampler\n"
-            "uniform sampler2D texture1;\n"
-            "uniform vec3 lightPos;\n"
-            "uniform vec3 viewPos;\n"
-            "\n"
-            "void main() {\n"
-            "vec3 lightColor = vec3(0.2, 0.2, 1.0);\n"
-            "// ambient\n"
-            "float ambientStrength = 0.3;\n"
-            "vec3 ambient = ambientStrength * vec3(1.0, 1.0, 1.0);\n"
-            "\n"
-            "// diffuse\n"
-            "vec3 norm = normalize(Normal);\n"
-            "vec3 lightDir = normalize(lightPos - FragPos);\n"
-            "float diff = max(dot(norm, lightDir), 0.0);\n"
-            "vec3 diffuse = diff * lightColor;\n"
-            "\n"
-            "// specular\n"
-            "float specularStrength = 0.5;\n"
-            "vec3 viewDir = normalize(viewPos - FragPos);\n"
-            "vec3 reflectDir = reflect(-lightDir, norm);\n"
-            "float spec = pow(max(dot(viewDir, reflectDir), 0.0), 32);\n"
-            "vec3 specular = specularStrength * spec * lightColor;\n"
-            "\n"
-            "vec4 result = vec4((ambient + diffuse + specular),1.0) * texture(texture1, TexCoord).rgba;\n"
-            "FragColor = result;\n"
-            "}";
-
-    EogllShaderProgram *program = eogllLinkProgram(vert, frag);
+    EogllShaderProgram *program = eogllLinkProgramFromFile("assets/shaders/cube.vert", "assets/shaders/cube.frag");
 
     EogllAttribBuilder builder = eogllCreateAttribBuilder();
     eogllAddAttribute(&builder, GL_FLOAT, 3); // position
@@ -359,24 +359,7 @@ int main() {
             0, 1, 2,
             2, 3, 0
     };
-    const char *crosshair_verts =
-            "#version 330 core\n"
-            "layout (location = 0) in vec3 aPos;\n"
-            "layout (location = 1) in vec2 aTexCoord;\n"
-            "out vec2 TexCoord;\n"
-            "uniform mat4 model;\n"
-            "void main() {\n"
-            "TexCoord = aTexCoord;\n"
-            "gl_Position = model * vec4(aPos.x, aPos.y, 0.0, 1.0);\n"
-            "}";
-    const char *crosshair_frags =
-            "#version 330 core\n"
-            "out vec4 FragColor;\n"
-            "in vec2 TexCoord;\n"
-            "uniform sampler2D texture1;\n"
-            "void main() {\n"
-            "FragColor = texture(texture1, TexCoord);\n"
-            "}";
+
     
     EogllAttribBuilder crosshair_builder = eogllCreateAttribBuilder();
     eogllAddAttribute(&crosshair_builder, GL_FLOAT, 3);
@@ -392,7 +375,7 @@ int main() {
     EogllTexture *crosshair_texture = eogllStartTexture();
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-    eogllFinishTexture(crosshair_texture, "crosshair.png");
+    eogllFinishTexture(crosshair_texture, "assets/textures/crosshair.png");
     EogllModel crosshair_model = eogllCreateModel();
     glm_vec3_copy((vec3) {0.0f, 0.0f, 0.0f}, crosshair_model.pos);
     glm_vec3_copy((vec3) {0.0f, 0.0f, 0.0f}, crosshair_model.rot);
@@ -411,15 +394,15 @@ int main() {
 
 
 
-    EogllShaderProgram *crosshair_program = eogllLinkProgram(crosshair_verts, crosshair_frags);
+    EogllShaderProgram *crosshair_program = eogllLinkProgramFromFile("assets/shaders/crosshair.vert", "assets/shaders/crosshair.frag");
 
-    EogllTexture *texture1 = eogllCreateTexture("wall.jpg");
-    EogllTexture *texture2 = eogllCreateTexture("light.png");
-    EogllTexture *texture3 = eogllCreateTexture("dirt.png");
+    EogllTexture *texture1 = eogllCreateTexture("assets/textures/wall.jpg");
+    EogllTexture *texture2 = eogllCreateTexture("assets/textures/light.png");
+    EogllTexture *texture3 = eogllCreateTexture("assets/textures/dirt.png");
     EogllTexture *texture4 = eogllStartTexture();
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-    eogllFinishTexture(texture4, "outline.png");
+    eogllFinishTexture(texture4, "assets/textures/outline.png");
 
     EogllTexture* textures[] = { // walls for now
             // air, dirt, grass, stone, light
@@ -564,14 +547,19 @@ int main() {
                 dat.selectedVoxelValid = false;
             }
             if (window->mousePress[EOGLL_MOUSE_BUTTON_LEFT]) {
-                // place a block at the cursor
-                // we need to raycast to find the block we are pointing at, we also need to stop at a certain distance to prevent infinite recursion
-                // Eogll does not have any ray utilities (yet) so we have to do it ourselves
                 if (result.hitBlock) {
                     Voxel *voxel = getVoxelFromWorld(&world, result.block[0], result.block[1], result.block[2]);
                     *voxel = (Voxel) {VOXEL_AIR};
                 }
             }
+            if (window->mousePress[EOGLL_MOUSE_BUTTON_RIGHT]) {
+                BlockPos pos = getBlockOnFace(result);
+                Voxel *voxel = getVoxelFromWorld(&world, pos.pos[0], pos.pos[1], pos.pos[2]);
+                if (voxel->type == VOXEL_AIR) {
+                    *voxel = (Voxel) {VOXEL_DIRT};
+                }
+            }
+
         }
 
         glClearColor(0.2f, 0.3f, 0.3f, 1.0f);
