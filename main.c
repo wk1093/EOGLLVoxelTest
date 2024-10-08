@@ -8,6 +8,7 @@
 // TODO: More chunks
 // TODO: Textures
 // TODO: worldgen
+// TODO: cull hidden faces (use a uniform to tell a block about it's neighbors)
 
 typedef enum {
     VOXEL_AIR,
@@ -272,117 +273,48 @@ int main() {
 
     eogllEnableTransparency();
     eogllEnableDepth();
-
-
-
-    float vertices[] = {
-            // positions            // texture coords  // normals
-            -0.5f, -0.5f, -0.5f,  0.0f, 0.0f, 0.0f,  0.0f, -1.0f,
-            0.5f, -0.5f, -0.5f,  1.0f, 0.0f, 0.0f,  0.0f, -1.0f,
-            0.5f,  0.5f, -0.5f,  1.0f, 1.0f, 0.0f,  0.0f, -1.0f,
-            0.5f,  0.5f, -0.5f,  1.0f, 1.0f, 0.0f,  0.0f, -1.0f,
-            -0.5f,  0.5f, -0.5f,  0.0f, 1.0f, 0.0f,  0.0f, -1.0f,
-            -0.5f, -0.5f, -0.5f,  0.0f, 0.0f, 0.0f,  0.0f, -1.0f,
-
-            -0.5f, -0.5f,  0.5f,  0.0f, 0.0f, 0.0f,  0.0f,  1.0f,
-            0.5f, -0.5f,  0.5f,  1.0f, 0.0f, 0.0f,  0.0f,  1.0f,
-            0.5f,  0.5f,  0.5f,  1.0f, 1.0f, 0.0f,  0.0f,  1.0f,
-            0.5f,  0.5f,  0.5f,  1.0f, 1.0f, 0.0f,  0.0f,  1.0f,
-            -0.5f,  0.5f,  0.5f,  0.0f, 1.0f, 0.0f,  0.0f,  1.0f,
-            -0.5f, -0.5f,  0.5f,  0.0f, 0.0f, 0.0f,  0.0f,  1.0f,
-
-            -0.5f,  0.5f,  0.5f,  1.0f, 0.0f, -1.0f,  0.0f,  0.0f,
-            -0.5f,  0.5f, -0.5f,  1.0f, 1.0f, -1.0f,  0.0f,  0.0f,
-            -0.5f, -0.5f, -0.5f,  0.0f, 1.0f, -1.0f,  0.0f,  0.0f,
-            -0.5f, -0.5f, -0.5f,  0.0f, 1.0f, -1.0f,  0.0f,  0.0f,
-            -0.5f, -0.5f,  0.5f,  0.0f, 0.0f, -1.0f,  0.0f,  0.0f,
-            -0.5f,  0.5f,  0.5f,  1.0f, 0.0f, -1.0f,  0.0f,  0.0f,
-
-            0.5f,  0.5f,  0.5f,  1.0f, 0.0f, 1.0f,  0.0f,  0.0f,
-            0.5f,  0.5f, -0.5f,  1.0f, 1.0f, 1.0f,  0.0f,  0.0f,
-            0.5f, -0.5f, -0.5f,  0.0f, 1.0f, 1.0f,  0.0f,  0.0f,
-            0.5f, -0.5f, -0.5f,  0.0f, 1.0f, 1.0f,  0.0f,  0.0f,
-            0.5f, -0.5f,  0.5f,  0.0f, 0.0f, 1.0f,  0.0f,  0.0f,
-            0.5f,  0.5f,  0.5f,  1.0f, 0.0f, 1.0f,  0.0f,  0.0f,
-
-            -0.5f, -0.5f, -0.5f,  0.0f, 1.0f, 0.0f, -1.0f,  0.0f,
-            0.5f, -0.5f, -0.5f,  1.0f, 1.0f, 0.0f, -1.0f,  0.0f,
-            0.5f, -0.5f,  0.5f,  1.0f, 0.0f, 0.0f, -1.0f,  0.0f,
-            0.5f, -0.5f,  0.5f,  1.0f, 0.0f, 0.0f, -1.0f,  0.0f,
-            -0.5f, -0.5f,  0.5f,  0.0f, 0.0f, 0.0f, -1.0f,  0.0f,
-            -0.5f, -0.5f, -0.5f,  0.0f, 1.0f, 0.0f, -1.0f,  0.0f,
-
-            -0.5f,  0.5f, -0.5f,  0.0f, 1.0f,  0.0f,  1.0f,  0.0f,
-            0.5f,  0.5f, -0.5f,  1.0f, 1.0f,  0.0f,  1.0f,  0.0f,
-            0.5f,  0.5f,  0.5f,  1.0f, 0.0f,  0.0f,  1.0f,  0.0f,
-            0.5f,  0.5f,  0.5f,  1.0f, 0.0f,  0.0f,  1.0f,  0.0f,
-            -0.5f,  0.5f,  0.5f,  0.0f, 0.0f,  0.0f,  1.0f,  0.0f,
-            -0.5f,  0.5f, -0.5f,  0.0f, 1.0f,  0.0f,  1.0f,  0.0f,
-    };
-
-    unsigned int indices[] = {
-            0, 1,  2,
-            3, 4,  5,
-            6, 7,  8,
-            9, 10, 11,
-            12, 13, 14,
-            15, 16, 17,
-            18, 19, 20,
-            21, 22, 23,
-            24, 25, 26,
-            27, 28, 29,
-            30, 31, 32,
-            33, 34, 35
-    };
+    eogllEnableFaceCulling();
 
     EogllShaderProgram *program = eogllLinkProgramFromFile("assets/shaders/cube.vert", "assets/shaders/cube.frag");
+    EogllShaderProgram *crosshair_program = eogllLinkProgramFromFile("assets/shaders/crosshair.vert", "assets/shaders/crosshair.frag");
 
-    EogllAttribBuilder builder = eogllCreateAttribBuilder();
-    eogllAddAttribute(&builder, GL_FLOAT, 3); // position
-    eogllAddAttribute(&builder, GL_FLOAT, 2); // texture coords
-    eogllAddAttribute(&builder, GL_FLOAT, 3); // normals
-    unsigned int vao = eogllGenVertexArray();
-    unsigned int vbo = eogllGenBuffer(vao, GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
-    unsigned int ebo = eogllGenBuffer(vao, GL_ELEMENT_ARRAY_BUFFER, sizeof(indices), indices, GL_STATIC_DRAW);
-    eogllBuildAttributes(&builder, vao);
-    EogllBufferObject object = eogllCreateBufferObject(vao, vbo, ebo, sizeof(indices), GL_UNSIGNED_INT);
+    EogllObjectAttrs attrs = eogllCreateObjectAttrs();
+    eogllAddObjectAttr(&attrs, GL_FLOAT, 3, EOGLL_ATTR_POSITION);
+    eogllAddObjectAttr(&attrs, GL_FLOAT, 2, EOGLL_ATTR_TEXTURE);
+    eogllAddObjectAttr(&attrs, GL_FLOAT, 3, EOGLL_ATTR_NORMAL);
+    EogllBufferObject object = eogllLoadBufferObject("assets/models/cube.obj", attrs, GL_STATIC_DRAW);
 
-    // crosshair stuff
-    float crosshair_vert[] = {
-        // positions tex coords
-            -0.5f, -0.5f, 0.0f, 0.0f, 0.0f,
-            0.5f, -0.5f, 0.0f, 1.0f, 0.0f,
-            0.5f, 0.5f, 0.0f, 1.0f, 1.0f,
-            -0.5f, 0.5f, 0.0f, 0.0f, 1.0f,
-    };
-    unsigned int crosshair_indices[] = {
-            0, 1, 2,
-            2, 3, 0
-    };
+    EogllObjectAttrs crosshair_attrs = eogllCreateObjectAttrs();
+    eogllAddObjectAttr(&crosshair_attrs, GL_FLOAT, 3, EOGLL_ATTR_POSITION);
+    eogllAddObjectAttr(&crosshair_attrs, GL_FLOAT, 2, EOGLL_ATTR_TEXTURE);
+    EogllBufferObject crosshair_object = eogllLoadBufferObject("assets/models/crosshair.obj", crosshair_attrs, GL_STATIC_DRAW);
 
-    
-    EogllAttribBuilder crosshair_builder = eogllCreateAttribBuilder();
-    eogllAddAttribute(&crosshair_builder, GL_FLOAT, 3);
-    eogllAddAttribute(&crosshair_builder, GL_FLOAT, 2);
-    unsigned int crosshair_vao = eogllGenVertexArray();
-    unsigned int crosshair_vbo = eogllGenBuffer(crosshair_vao, GL_ARRAY_BUFFER, sizeof(crosshair_vert), crosshair_vert, GL_STATIC_DRAW);
-    unsigned int crosshair_ebo = eogllGenBuffer(crosshair_vao, GL_ELEMENT_ARRAY_BUFFER, sizeof(crosshair_indices), crosshair_indices, GL_STATIC_DRAW);
-    eogllBuildAttributes(&crosshair_builder, crosshair_vao);
-    EogllBufferObject crosshair_object = eogllCreateBufferObject(crosshair_vao, crosshair_vbo, crosshair_ebo, sizeof(crosshair_indices), GL_UNSIGNED_INT);
-    
     // set gl to not smooth the texture
 
     EogllTexture *crosshair_texture = eogllStartTexture();
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
     eogllFinishTexture(crosshair_texture, "assets/textures/crosshair.png");
+
+    EogllTexture *temp = eogllCreateTexture("assets/textures/wall.jpg");
+    EogllTexture *light = eogllCreateTexture("assets/textures/light.png");
+    EogllTexture *dirt = eogllCreateTexture("assets/textures/dirt.png");
+
+    EogllTexture *outline = eogllStartTexture();
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    eogllFinishTexture(outline, "assets/textures/outline.png");
+
+    EogllTexture* textures[] = { // walls for now
+            // air, dirt, grass, stone, light, outline
+            NULL, dirt, temp, temp, light, outline
+    };
+    
+
     EogllModel crosshair_model = eogllCreateModel();
     glm_vec3_copy((vec3) {0.0f, 0.0f, 0.0f}, crosshair_model.pos);
     glm_vec3_copy((vec3) {0.0f, 0.0f, 0.0f}, crosshair_model.rot);
-    
-    // adjust crosshair size to match the window size, so it doesn't appear stretched
-    // normally the crosshair looks stretched to match the aspect ratio of the window
-    // we want to counteract this
+
     float crosshair_width = 0.06f;
     float crosshair_height = 0.06f;
     if (window->width > window->height) {
@@ -391,23 +323,6 @@ int main() {
         crosshair_height *= (float)window->width / (float)window->height;
     }
     glm_vec3_copy((vec3) {crosshair_width, crosshair_height, 1.0f}, crosshair_model.scale);
-
-
-
-    EogllShaderProgram *crosshair_program = eogllLinkProgramFromFile("assets/shaders/crosshair.vert", "assets/shaders/crosshair.frag");
-
-    EogllTexture *texture1 = eogllCreateTexture("assets/textures/wall.jpg");
-    EogllTexture *texture2 = eogllCreateTexture("assets/textures/light.png");
-    EogllTexture *texture3 = eogllCreateTexture("assets/textures/dirt.png");
-    EogllTexture *texture4 = eogllStartTexture();
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-    eogllFinishTexture(texture4, "assets/textures/outline.png");
-
-    EogllTexture* textures[] = { // walls for now
-            // air, dirt, grass, stone, light
-            texture1, texture3, texture1, texture1, texture2, texture4
-    };
 
     GameData dat = {
             .buffer = &object,
